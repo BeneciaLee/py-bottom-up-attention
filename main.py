@@ -207,5 +207,5 @@ if __name__ == "__main__":
     # Load VG Classes
 
     print('Shape of features:\n', features.shape)
-
+    print("여기는 develop")
     make_turn_one_data()
