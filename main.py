@@ -32,7 +32,74 @@ import pickle
 from IPython.display import clear_output, Image, display
 import PIL.Image
 
-def faster_rcnn(image_hashed):
+
+def make_turn_one_data():
+    train_path = '../datasets/train_valid_deleted_candidates.json'
+    caption_json_file = '../datasets/yfcc_images_added_captions.json'
+    with open(train_path) as file:
+        datas = json.load(file)
+
+    with open(caption_json_file) as file:
+        caption_datas = json.load(file)
+
+    captions = []
+    image_hashes = []
+    dialogues = []
+
+    """
+        전체 데이터가 모두 3개의 발화를 갖고 있는 것은 아니다.
+        즉, 하나의 발화만을 갖고 있는 데이터들이 존재한다.
+
+        따라서, 3개의 발화 턴을 갖는 데이터만을 학습에 사용한다.
+        밑은 이러한 발화에서 3개의 턴을 갖는 데이터만을 수집하는 과정이다.
+    """
+    for data in tqdm(datas):
+        dialog = data['dialog']
+        image_hash = data['image_hash']
+        tmp = []
+        """
+            하나의 데이터에는 3개의 턴이 존재한다. Turn1, Turn2, Turn3가 존재한다.
+            여기에서 Turn1당 스타일 정보와 발화 정보가 리스트 안에 담겨져 있다.
+            이러한 스타일 정보와 발화 정보를 모두 사용하기 위해서 스타일 정보와 발화 정보를 합친다.
+            -> Appreciative (Grateful)<sty>home sweet home
+            이때 스타일 정보와 발화 정보 사이에 <sty>이라는 특수 토큰을 사용한다.
+        """
+        for d in dialog:
+            tmp.append(" ".join(d))
+
+        # 그리고 실제 데이터에서 존재하지 않는 해시명이 존재한다.
+        # 이러한 해시명 같은 경우는 필요가 없으므로 제거한다.
+        if (image_hash + ".jpg") not in caption_datas or len(dialog) < 1:
+            continue
+
+        dialogues.append(tmp)
+        captions.append(caption_datas[image_hash + ".jpg"][0])
+        image_hashes.append(image_hash + ".jpg")
+    print("###############################")
+    # Captions: ['a view of a road with a stop sign and a building in the background']
+    # Image_hashes: ['5eaa7034d31688ef1f9bed67f1f04f49.jpg']
+    # Dialogues: [['Appreciative (Grateful)<sty>home sweet home', 'Glamorous<sty>in my big house', 'Appreciative (Grateful)<sty>Its a house, so like it']]
+    print("Captions: ", captions[:1])
+    print("Image_hashes : ", image_hashes[:1])
+    print("Dialogues : ", dialogues[:1])
+
+    del datas, caption_datas
+    gc.collect()
+
+    features = faster_rcnn(image_hashes)
+    # image_dataset_for_upscaling = ImageDatasetForUpscaling(image_hashes)
+    # patches = image_resize_and_patch(image_dataset_for_upscaling, batch_size=64)
+    # print("Patches : ", patches.shape)
+    # torch.save(patches, "../datasets/tensor_pactched_with_turn_one.pt")
+    print("Success")
+
+def showarray(a, fmt='jpeg'):
+    a = np.uint8(np.clip(a, 0, 255))
+    f = io.BytesIO()
+    PIL.Image.fromarray(a).save(f, fmt)
+    display(Image(data=f.getvalue()))
+
+if __name__ == "__main__":
     data_path = 'data/genome/1600-400-20'
 
     vg_classes = []
@@ -54,9 +121,7 @@ def faster_rcnn(image_hashed):
     cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.6
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.2
     # VG Weight
-
     cfg.MODEL.WEIGHTS = "faster_rcnn_from_caffe_attr.pkl"
-    # cfg.MODEL.WEIGHTS = weigth
     predictor = DefaultPredictor(cfg)
 
     NUM_OBJECTS = 32
@@ -127,85 +192,10 @@ def faster_rcnn(image_hashed):
             instances.attr_classes = max_attr_label
 
             print(instances)
-            roi_features_batch = roi_features.unsqueeze(0)
-            return instances, roi_features_batch
 
-    for image_hash in image_hashed:
-        im = cv2.imread(os.path.join("../datasets/images/yfcc_images", image_hash))
+            return instances, roi_features
 
 
-    print("Im : ", im.shape)
-
+    im = cv2.imread("data/images/input.jpg")
     instances, features = doit(im)
-def make_turn_one_data():
-    train_path = '../datasets/train_valid_deleted_candidates.json'
-    caption_json_file = '../datasets/yfcc_images_added_captions.json'
-    with open(train_path) as file:
-        datas = json.load(file)
-
-    with open(caption_json_file) as file:
-        caption_datas = json.load(file)
-
-    captions = []
-    image_hashes = []
-    dialogues = []
-
-    """
-        전체 데이터가 모두 3개의 발화를 갖고 있는 것은 아니다.
-        즉, 하나의 발화만을 갖고 있는 데이터들이 존재한다.
-
-        따라서, 3개의 발화 턴을 갖는 데이터만을 학습에 사용한다.
-        밑은 이러한 발화에서 3개의 턴을 갖는 데이터만을 수집하는 과정이다.
-    """
-    for data in tqdm(datas):
-        dialog = data['dialog']
-        image_hash = data['image_hash']
-        tmp = []
-        """
-            하나의 데이터에는 3개의 턴이 존재한다. Turn1, Turn2, Turn3가 존재한다.
-            여기에서 Turn1당 스타일 정보와 발화 정보가 리스트 안에 담겨져 있다.
-            이러한 스타일 정보와 발화 정보를 모두 사용하기 위해서 스타일 정보와 발화 정보를 합친다.
-            -> Appreciative (Grateful)<sty>home sweet home
-            이때 스타일 정보와 발화 정보 사이에 <sty>이라는 특수 토큰을 사용한다.
-        """
-        for d in dialog:
-            tmp.append(" ".join(d))
-
-        # 그리고 실제 데이터에서 존재하지 않는 해시명이 존재한다.
-        # 이러한 해시명 같은 경우는 필요가 없으므로 제거한다.
-        if (image_hash + ".jpg") not in caption_datas or len(dialog) < 1:
-            continue
-
-        dialogues.append(tmp)
-        captions.append(caption_datas[image_hash + ".jpg"][0])
-        image_hashes.append(image_hash + ".jpg")
-    print("###############################")
-    # Captions: ['a view of a road with a stop sign and a building in the background']
-    # Image_hashes: ['5eaa7034d31688ef1f9bed67f1f04f49.jpg']
-    # Dialogues: [['Appreciative (Grateful)<sty>home sweet home', 'Glamorous<sty>in my big house', 'Appreciative (Grateful)<sty>Its a house, so like it']]
-    print("Captions: ", captions[:1])
-    print("Image_hashes : ", image_hashes[:1])
-    print("Dialogues : ", dialogues[:1])
-
-    del datas, caption_datas
-    gc.collect()
-
-    features = faster_rcnn(image_hashes)
-    # image_dataset_for_upscaling = ImageDatasetForUpscaling(image_hashes)
-    # patches = image_resize_and_patch(image_dataset_for_upscaling, batch_size=64)
-    # print("Patches : ", patches.shape)
-    # torch.save(patches, "../datasets/tensor_pactched_with_turn_one.pt")
-    print("Success")
-
-def showarray(a, fmt='jpeg'):
-    a = np.uint8(np.clip(a, 0, 255))
-    f = io.BytesIO()
-    PIL.Image.fromarray(a).save(f, fmt)
-    display(Image(data=f.getvalue()))
-
-if __name__ == "__main__":
-    # Load VG Classes
-
-    print('Shape of features:\n', features.shape)
-
-    make_turn_one_data()
+    print(print('Shape of features:\n', features.shape))
